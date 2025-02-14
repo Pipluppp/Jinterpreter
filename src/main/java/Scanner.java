@@ -4,12 +4,6 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
-class LexerException extends Exception {
-    public LexerException(String message, int lineNumber, int columnNumber) {
-        super(String.format("%s (line: %d, column: %d)", message, lineNumber, columnNumber));
-    }
-}
-
 public class Scanner {
     private final BufferedReader reader;
     private int lineNumber;
@@ -65,7 +59,7 @@ public class Scanner {
         }
     }
 
-    public List<Token> scan() throws LexerException, IOException {
+    public List<Token> scan() throws ScannerException, IOException {
         while (currentChar != '\0') {
             skipWhitespaceAndComments();
             if (currentChar == '\0') {
@@ -84,7 +78,7 @@ public class Scanner {
         return tokens;
     }
 
-    private Token createToken() throws LexerException, IOException {
+    private Token createToken() throws ScannerException, IOException {
         if (Character.isDigit(currentChar) || (currentChar == '.' && Character.isDigit(peek()))) {
             return scanNumber();
         } else if (Character.isLetter(currentChar) || currentChar == '_') {
@@ -98,7 +92,7 @@ public class Scanner {
         }
     }
 
-    private Token scanNumber() throws LexerException, IOException {
+    private Token scanNumber() throws ScannerException, IOException {
         StringBuilder lexeme = new StringBuilder();
         boolean hasDecimal = false;
 
@@ -125,7 +119,7 @@ public class Scanner {
                     digits++;
                 }
                 if (digits != 3) {
-                    throw new LexerException("Invalid noise separators", lineNumber, columnNumber);
+                    throw new ScannerException("Invalid noise separators", lineNumber, columnNumber);
                 }
                 continue; // Skip appending the separator itself
             }
@@ -146,7 +140,7 @@ public class Scanner {
         return new Token(hasDecimal ? Token.TokenType.FLOAT_LITERAL : Token.TokenType.INTEGER_LITERAL, cleanedLexeme, 0, 0);
     }
 
-    private Token scanIdentifierOrKeyword() throws LexerException, IOException {
+    private Token scanIdentifierOrKeyword() throws ScannerException, IOException {
         StringBuilder lexeme = new StringBuilder();
         while (Character.isLetterOrDigit(currentChar) || currentChar == '_') {
             lexeme.append(currentChar);
@@ -155,7 +149,7 @@ public class Scanner {
 
         String lexemeStr = lexeme.toString();
         if (lexemeStr.length() > 31) {
-            throw new LexerException("Invalid identifier: exceeds maximum length", lineNumber, columnNumber);
+            throw new ScannerException("Invalid identifier: exceeds maximum length", lineNumber, columnNumber);
         }
 
         Token.TokenType type = checkKeyword(lexemeStr);
@@ -182,7 +176,7 @@ public class Scanner {
         };
     }
 
-    private Token scanString() throws LexerException, IOException {
+    private Token scanString() throws ScannerException, IOException {
         StringBuilder lexeme = new StringBuilder();
         readNextChar();
 
@@ -196,7 +190,7 @@ public class Scanner {
                     case '"':  lexeme.append('"');  break;
                     case '\\': lexeme.append('\\'); break;
                     default:
-                        throw new LexerException("Invalid escape sequence", lineNumber, columnNumber);
+                        throw new ScannerException("Invalid escape sequence", lineNumber, columnNumber);
                 }
             } else {
                 lexeme.append(currentChar);
@@ -208,11 +202,11 @@ public class Scanner {
             readNextChar();
             return new Token(Token.TokenType.STRING, lexeme.toString(), 0, 0);
         } else {
-            throw new LexerException("Unterminated string", lineNumber, columnNumber);
+            throw new ScannerException("Unterminated string", lineNumber, columnNumber);
         }
     }
 
-    private Token scanCharacterLiteral() throws LexerException, IOException {
+    private Token scanCharacterLiteral() throws ScannerException, IOException {
         readNextChar();
 
         char charValue;
@@ -224,24 +218,24 @@ public class Scanner {
                 case 'r' -> '\r';
                 case '\'' -> '\'';
                 case '\\' -> '\\';
-                default -> throw new LexerException("Invalid escape sequence in character literal", lineNumber, columnNumber);
+                default -> throw new ScannerException("Invalid escape sequence in character literal", lineNumber, columnNumber);
             };
         } else if (currentChar == '\'' || currentChar == '\0') {
-            throw new LexerException("Invalid character literal", lineNumber, columnNumber);
+            throw new ScannerException("Invalid character literal", lineNumber, columnNumber);
         } else {
             charValue = currentChar;
         }
         readNextChar();
 
         if(currentChar != '\'') {
-            throw new LexerException("Unterminated character literal", lineNumber, columnNumber);
+            throw new ScannerException("Unterminated character literal", lineNumber, columnNumber);
         }
 
         readNextChar();
         return new Token(Token.TokenType.CHARACTER_LITERAL, String.valueOf(charValue), 0, 0); // Store the actual character
     }
 
-    private Token scanSymbol() throws LexerException, IOException {
+    private Token scanSymbol() throws ScannerException, IOException {
         Token token = switch (currentChar) {
             case '(' -> new Token(Token.TokenType.LEFT_PARENTHESIS, "(", 0, 0);
             case ')' -> new Token(Token.TokenType.RIGHT_PARENTHESIS, ")", 0, 0);
@@ -301,11 +295,11 @@ public class Scanner {
                     readNextChar();
                     yield new Token(Token.TokenType.OR, "||", 0, 0);
                 } else {
-                    throw new LexerException("Invalid character '|'", lineNumber, columnNumber);
+                    throw new ScannerException("Invalid character '|'", lineNumber, columnNumber);
                 }
             }
             case '/' -> new Token(Token.TokenType.DIVIDE, "/", 0, 0);
-            default -> throw new LexerException("Invalid character: " + currentChar, lineNumber, columnNumber);
+            default -> throw new ScannerException("Invalid character: " + currentChar, lineNumber, columnNumber);
         };
         readNextChar();
         return token;
