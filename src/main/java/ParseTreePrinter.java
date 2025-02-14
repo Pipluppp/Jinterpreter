@@ -26,11 +26,20 @@ public class ParseTreePrinter {
 
         if (node.token != null) {
             // Terminal node
+            //string must not be in ""
             if (node.token.type == Token.TokenType.STRING) {
                 writer.print(node.token.type.name() + ": " + node.token.lexeme);
-            } else if (node.token.type.isKeyword()) {
+            }
+            //keywords must not have ""
+            else if (node.token.type.isKeyword()) {
                 writer.print(node.token.lexeme);
-            } else {
+            }
+            // nodes like int, char, and bool in data type
+            else if(node.name.equals("int") || node.name.equals("bool") || node.name.equals("char") || node.name.equals("float") ){
+                writer.print(node.token.lexeme);
+            }
+            // other tokens print type: "lexeme"
+            else {
                 writer.print(node.token.type.name() + ": \"" + node.token.lexeme + "\"");
             }
         } else {
@@ -50,7 +59,6 @@ public class ParseTreePrinter {
             writer.print(")");
         }
     }
-
     private void printIndent(int indentLevel) {
         for (int i = 0; i < indentLevel; i++) {
             writer.print("  ");

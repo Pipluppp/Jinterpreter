@@ -1,4 +1,5 @@
 import java.util.List;
+
 public class Parser {
 
     private final List<Token> tokens;
@@ -31,12 +32,15 @@ public class Parser {
         }
     }
 
-    private void match(Token.TokenType expectedType) throws ParserException {
+    private ParseTreeNode matchAndCreate(Token.TokenType expectedType) throws ParserException {
         if (currentToken().type == expectedType) {
+            ParseTreeNode node = new ParseTreeNode(expectedType.toString(), currentToken());
             consumeToken();
+            return node;
         } else {
             reportError("Expected token " + expectedType + " but found " + currentToken().type, expectedType);
-            synchronize();
+            synchronize(); // This will throw an exception due to panic mode, need to catch at top level parse().
+            return null; // synchronize() method will not return
         }
     }
 
@@ -48,13 +52,21 @@ public class Parser {
     }
 
     public ParseTreeNode parse() throws ParserException {
-        ParseTreeNode root = parseProgram();
-        if (!panicMode) {
-            System.out.println("Parsing successful!");
-        } else {
-            System.err.println("Parsing failed due to errors.");
-            throw new ParserException("Parsing failed", currentToken().lineNumber, currentToken().columnNumber);
+        ParseTreeNode root = null;
+        try {
+            root = parseProgram();
+            if (!panicMode) {
+                System.out.println("Parsing successful!");
+            } else {
+                System.err.println("Parsing failed due to errors.");
+                throw new ParserException("Parsing failed", currentToken().lineNumber, currentToken().columnNumber);
+            }
+        } catch (ParserException e){
+            // System.err.println("Caught a parser exception: " + e.getMessage());
+            // rethrow the exception for top-level handling
+            throw e;
         }
+
         return root;
     }
 
@@ -73,6 +85,7 @@ public class Parser {
 
     private ParseTreeNode parseDeclaration() throws ParserException {
         var declarationNode = createNode("Declaration");
+
         if (currentToken().type.isKeyword() && (
                 currentToken().type == Token.TokenType.INT_KW ||
                         currentToken().type == Token.TokenType.FLOAT_KW ||
@@ -92,7 +105,7 @@ public class Parser {
                 }
                 return declarationNode;
             } else {
-                return null;
+                return null; // Or throw an exception if this is unexpected
             }
 
         } else {
@@ -104,23 +117,23 @@ public class Parser {
         var varDeclNode = createNode("Variable_Declaration");
         varDeclNode.addChild(parseDataType());
         varDeclNode.addChild(createNode("Identifier", currentToken()));
-        match(Token.TokenType.IDENTIFIER);
+        matchAndCreate(Token.TokenType.IDENTIFIER);
 
         if (currentToken().type == Token.TokenType.ASSIGN) {
-            consumeToken(); // Consume '='
+            varDeclNode.addChild(matchAndCreate(Token.TokenType.ASSIGN));
             varDeclNode.addChild(parseExp());
         }
 
         while (currentToken().type == Token.TokenType.COMMA) {
-            consumeToken();
+            varDeclNode.addChild(matchAndCreate(Token.TokenType.COMMA));
             varDeclNode.addChild(createNode("Identifier", currentToken()));
-            match(Token.TokenType.IDENTIFIER);
+            matchAndCreate(Token.TokenType.IDENTIFIER);
             if (currentToken().type == Token.TokenType.ASSIGN) {
-                consumeToken(); // Consume '='
+                varDeclNode.addChild(matchAndCreate(Token.TokenType.ASSIGN));
                 varDeclNode.addChild(parseExp());
             }
         }
-        match(Token.TokenType.SEMICOLON);
+        varDeclNode.addChild(matchAndCreate(Token.TokenType.SEMICOLON));
         return varDeclNode;
     }
 
@@ -129,8 +142,8 @@ public class Parser {
         arrayDeclNode.addChild(parseDataType());
         arrayDeclNode.addChild(createNode("Identifier", currentToken()));
 
-        match(Token.TokenType.IDENTIFIER);
-        match(Token.TokenType.LEFT_BRACKET);
+        matchAndCreate(Token.TokenType.IDENTIFIER);
+        arrayDeclNode.addChild(matchAndCreate(Token.TokenType.LEFT_BRACKET));
 
         if (currentToken().type == Token.TokenType.INTEGER_LITERAL ||
                 currentToken().type == Token.TokenType.FLOAT_LITERAL ||
@@ -140,18 +153,22 @@ public class Parser {
             arrayDeclNode.addChild(parseConst());
         }
 
-        match(Token.TokenType.RIGHT_BRACKET);
+        arrayDeclNode.addChild(matchAndCreate(Token.TokenType.RIGHT_BRACKET));
+
 
         if (currentToken().type == Token.TokenType.ASSIGN) {
-            consumeToken();
-            match(Token.TokenType.LEFT_BRACE);
+            arrayDeclNode.addChild(matchAndCreate(Token.TokenType.ASSIGN));
+            arrayDeclNode.addChild(matchAndCreate(Token.TokenType.LEFT_BRACE));
+
             if (currentToken().type != Token.TokenType.RIGHT_BRACE) {
                 arrayDeclNode.addChild(parseArgumentList());
             }
-            match(Token.TokenType.RIGHT_BRACE);
+            arrayDeclNode.addChild(matchAndCreate(Token.TokenType.RIGHT_BRACE));
+
         }
 
-        match(Token.TokenType.SEMICOLON);
+        arrayDeclNode.addChild(matchAndCreate(Token.TokenType.SEMICOLON));
+
         return arrayDeclNode;
     }
 
@@ -160,15 +177,15 @@ public class Parser {
         funcDeclNode.addChild(parseDataType());
         funcDeclNode.addChild(createNode("Identifier", currentToken()));
 
-        match(Token.TokenType.IDENTIFIER);
-        match(Token.TokenType.LEFT_PARENTHESIS);
+        matchAndCreate(Token.TokenType.IDENTIFIER);
+        funcDeclNode.addChild(matchAndCreate(Token.TokenType.LEFT_PARENTHESIS));
         funcDeclNode.addChild(parseParameterList());
-        match(Token.TokenType.RIGHT_PARENTHESIS);
+        funcDeclNode.addChild(matchAndCreate(Token.TokenType.RIGHT_PARENTHESIS));
 
         if (currentToken().type == Token.TokenType.LEFT_BRACE) {
             funcDeclNode.addChild(parseBlock());
         } else {
-            match(Token.TokenType.SEMICOLON);
+            funcDeclNode.addChild(matchAndCreate(Token.TokenType.SEMICOLON));
         }
         return funcDeclNode;
     }
@@ -177,7 +194,7 @@ public class Parser {
         var paramListNode = createNode("Parameter_List");
 
         if (currentToken().type == Token.TokenType.VOID_KW) {
-            consumeToken();
+            consumeToken(); // consume void
         } else if (currentToken().type == Token.TokenType.INT_KW ||
                 currentToken().type == Token.TokenType.FLOAT_KW ||
                 currentToken().type == Token.TokenType.CHAR_KW ||
@@ -185,14 +202,13 @@ public class Parser {
 
             paramListNode.addChild(parseDataType());
             paramListNode.addChild(createNode("Identifier", currentToken()));
-            match(Token.TokenType.IDENTIFIER);
+            matchAndCreate(Token.TokenType.IDENTIFIER);
 
             while (currentToken().type == Token.TokenType.COMMA) {
-                consumeToken();
+                paramListNode.addChild(matchAndCreate(Token.TokenType.COMMA));
                 paramListNode.addChild(parseDataType());
                 paramListNode.addChild(createNode("Identifier", currentToken()));
-
-                match(Token.TokenType.IDENTIFIER);
+                matchAndCreate(Token.TokenType.IDENTIFIER);
             }
         }
         return paramListNode;
@@ -204,43 +220,45 @@ public class Parser {
         switch (current.type) {
             case INT_KW -> {
                 dataTypeNode.addChild(createNode("int", currentToken()));
-                match(Token.TokenType.INT_KW);
+                matchAndCreate(Token.TokenType.INT_KW);
             }
             case FLOAT_KW -> {
                 dataTypeNode.addChild(createNode("float", currentToken()));
-                match(Token.TokenType.FLOAT_KW);
+                matchAndCreate(Token.TokenType.FLOAT_KW);
             }
             case CHAR_KW -> {
                 dataTypeNode.addChild(createNode("char", currentToken()));
-                match(Token.TokenType.CHAR_KW);
+                matchAndCreate(Token.TokenType.CHAR_KW);
             }
             case BOOL_KW -> {
                 dataTypeNode.addChild(createNode("bool", currentToken()));
-                match(Token.TokenType.BOOL_KW);
+                matchAndCreate(Token.TokenType.BOOL_KW);
             }
             default ->
-                //Error
                     throw new ParserException("Expected a data type", current.lineNumber, current.columnNumber);
 
         }
         return dataTypeNode;
     }
-
     private ParseTreeNode parseArgumentList() throws ParserException {
         var argListNode = createNode("Argument_List");
-        argListNode.addChild(parseExp());
+        var exp = createNode("Exp");
+        exp.addChild(parseExp());
+        argListNode.addChild(exp);
         while (currentToken().type == Token.TokenType.COMMA) {
-            consumeToken();
-            argListNode.addChild(parseExp());
+            argListNode.addChild(matchAndCreate(Token.TokenType.COMMA));
+            exp = createNode("Exp");
+            exp.addChild(parseExp());
+            argListNode.addChild(exp);
         }
         return argListNode;
     }
 
     private ParseTreeNode parseBlock() throws ParserException {
         var blockNode = createNode("Block");
-        match(Token.TokenType.LEFT_BRACE);
+        blockNode.addChild(matchAndCreate(Token.TokenType.LEFT_BRACE));
         blockNode.addChild(parseBlockItemList());
-        match(Token.TokenType.RIGHT_BRACE);
+        blockNode.addChild(matchAndCreate(Token.TokenType.RIGHT_BRACE));
         return blockNode;
     }
 
@@ -284,7 +302,7 @@ public class Parser {
             case RETURN_KW -> statementNode.addChild(parseReturnStatement());
             case IDENTIFIER -> {
                 statementNode.addChild(parseExp());
-                match(Token.TokenType.SEMICOLON);
+                statementNode.addChild(matchAndCreate(Token.TokenType.SEMICOLON));
             }
             case IF_KW -> statementNode.addChild(parseIfStatement());
             case WHILE_KW -> statementNode.addChild(parseWhileStatement());
@@ -292,8 +310,8 @@ public class Parser {
             case SCANF_KW -> statementNode.addChild(parseInputStatement());
             case PRINTF_KW -> statementNode.addChild(parseOutputStatement());
             case SEMICOLON -> {
-                statementNode.addChild(createNode(";", currentToken()));
-                consumeToken();
+                statementNode.addChild(matchAndCreate(Token.TokenType.SEMICOLON));
+
             }
             case LEFT_BRACE -> statementNode.addChild(parseBlock());
             default -> statementNode.addChild(parseExpressionStatement());
@@ -303,8 +321,8 @@ public class Parser {
 
     private ParseTreeNode parseForStatement() throws ParserException {
         var forNode = createNode("For_Statement");
-        match(Token.TokenType.FOR_KW);
-        match(Token.TokenType.LEFT_PARENTHESIS);
+        forNode.addChild(matchAndCreate(Token.TokenType.FOR_KW));
+        forNode.addChild(matchAndCreate(Token.TokenType.LEFT_PARENTHESIS));
 
         if (currentToken().type == Token.TokenType.INT_KW ||
                 currentToken().type == Token.TokenType.FLOAT_KW ||
@@ -317,13 +335,13 @@ public class Parser {
             }
         } else {
             forNode.addChild(parseExp());
-            match(Token.TokenType.SEMICOLON);
+            forNode.addChild(matchAndCreate(Token.TokenType.SEMICOLON));
         }
 
         forNode.addChild(parseExp());
-        match(Token.TokenType.SEMICOLON);
+        forNode.addChild(matchAndCreate(Token.TokenType.SEMICOLON));
         forNode.addChild(parseExp());
-        match(Token.TokenType.RIGHT_PARENTHESIS);
+        forNode.addChild(matchAndCreate(Token.TokenType.RIGHT_PARENTHESIS));
         forNode.addChild(parseBlock());
 
         return forNode;
@@ -331,61 +349,63 @@ public class Parser {
 
     private ParseTreeNode parseWhileStatement() throws ParserException {
         var whileNode = createNode("While_Statement");
-        match(Token.TokenType.WHILE_KW);
-        match(Token.TokenType.LEFT_PARENTHESIS);
+        whileNode.addChild(matchAndCreate(Token.TokenType.WHILE_KW));
+        whileNode.addChild(matchAndCreate(Token.TokenType.LEFT_PARENTHESIS));
         whileNode.addChild(parseExp());
-        match(Token.TokenType.RIGHT_PARENTHESIS);
+        whileNode.addChild(matchAndCreate(Token.TokenType.RIGHT_PARENTHESIS));
         whileNode.addChild(parseBlock());
         return whileNode;
     }
 
     private ParseTreeNode parseInputStatement() throws ParserException {
         var inputNode = createNode("Input_Statement");
-        match(Token.TokenType.SCANF_KW);
-        match(Token.TokenType.LEFT_PARENTHESIS);
+        inputNode.addChild(matchAndCreate(Token.TokenType.SCANF_KW));
+        inputNode.addChild(matchAndCreate(Token.TokenType.LEFT_PARENTHESIS));
         inputNode.addChild(createNode("String", currentToken()));
-        match(Token.TokenType.STRING);
+        matchAndCreate(Token.TokenType.STRING);
 
         while (currentToken().type == Token.TokenType.COMMA) {
-            consumeToken();
-            match(Token.TokenType.AMPERSAND);
+            inputNode.addChild(matchAndCreate(Token.TokenType.COMMA));
+            inputNode.addChild(matchAndCreate(Token.TokenType.AMPERSAND));
             inputNode.addChild(createNode("Identifier", currentToken()));
-            match(Token.TokenType.IDENTIFIER);
+            matchAndCreate(Token.TokenType.IDENTIFIER);
         }
-        match(Token.TokenType.RIGHT_PARENTHESIS);
-        match(Token.TokenType.SEMICOLON);
+        inputNode.addChild(matchAndCreate(Token.TokenType.RIGHT_PARENTHESIS));
+        inputNode.addChild(matchAndCreate(Token.TokenType.SEMICOLON));
         return inputNode;
     }
 
     private ParseTreeNode parseOutputStatement() throws ParserException {
         var outputNode = createNode("Output_Statement");
-        match(Token.TokenType.PRINTF_KW);
-        match(Token.TokenType.LEFT_PARENTHESIS);
+        outputNode.addChild(matchAndCreate(Token.TokenType.PRINTF_KW));
+        outputNode.addChild(matchAndCreate(Token.TokenType.LEFT_PARENTHESIS));
 
         if (currentToken().type == Token.TokenType.STRING) {
             outputNode.addChild(createNode("String", currentToken()));
-            match(Token.TokenType.STRING);
+            matchAndCreate(Token.TokenType.STRING);
             while (currentToken().type == Token.TokenType.COMMA) {
-                consumeToken();
+                outputNode.addChild(matchAndCreate(Token.TokenType.COMMA));
                 outputNode.addChild(parseExp());
             }
         } else if (currentToken().type == Token.TokenType.IDENTIFIER) {
             outputNode.addChild(createNode("Identifier", currentToken()));
-            match(Token.TokenType.IDENTIFIER);
+            matchAndCreate(Token.TokenType.IDENTIFIER);
         } else {
             throw new ParserException("Expected String or Identifier", currentToken().lineNumber, currentToken().columnNumber);
         }
-        match(Token.TokenType.RIGHT_PARENTHESIS);
-        match(Token.TokenType.SEMICOLON);
+        outputNode.addChild(matchAndCreate(Token.TokenType.RIGHT_PARENTHESIS));
+        outputNode.addChild(matchAndCreate(Token.TokenType.SEMICOLON));
+
         return outputNode;
+
     }
 
     private ParseTreeNode parseIfStatement() throws ParserException {
         var ifNode = createNode("If_Statement");
-        match(Token.TokenType.IF_KW);
-        match(Token.TokenType.LEFT_PARENTHESIS);
+        ifNode.addChild(matchAndCreate(Token.TokenType.IF_KW));
+        ifNode.addChild(matchAndCreate(Token.TokenType.LEFT_PARENTHESIS));
         ifNode.addChild(parseExp());
-        match(Token.TokenType.RIGHT_PARENTHESIS);
+        ifNode.addChild(matchAndCreate(Token.TokenType.RIGHT_PARENTHESIS));
         ifNode.addChild(parseBlock());
 
         while (currentToken().type == Token.TokenType.ELSE_KW) {
@@ -396,7 +416,7 @@ public class Parser {
 
     private ParseTreeNode parseElseClause() throws ParserException {
         var elseNode = createNode("Else_Clause");
-        match(Token.TokenType.ELSE_KW);
+        elseNode.addChild(matchAndCreate(Token.TokenType.ELSE_KW));
         if (currentToken().type == Token.TokenType.IF_KW) {
             elseNode.addChild(parseIfStatement());
         } else {
@@ -407,22 +427,25 @@ public class Parser {
 
     private ParseTreeNode parseReturnStatement() throws ParserException {
         var returnNode = createNode("Return_Statement");
-        match(Token.TokenType.RETURN_KW);
+        returnNode.addChild(matchAndCreate(Token.TokenType.RETURN_KW));
         returnNode.addChild(parseExp());
-        match(Token.TokenType.SEMICOLON);
+        returnNode.addChild(matchAndCreate(Token.TokenType.SEMICOLON));
         return returnNode;
     }
 
     private ParseTreeNode parseExpressionStatement() throws ParserException {
         var expressionStatementNode = createNode("Expression_Statement");
-        expressionStatementNode.addChild(parseExp()); // Wrap in an Exp node
-        match(Token.TokenType.SEMICOLON);
+        var expNode = createNode("Exp");
+        expNode.addChild(parseExp());
+        expressionStatementNode.addChild(expNode);
+        expressionStatementNode.addChild(matchAndCreate(Token.TokenType.SEMICOLON));
         return expressionStatementNode;
     }
 
     private ParseTreeNode parseExp() throws ParserException {
         if (currentToken().type == Token.TokenType.IDENTIFIER) {
             int lookahead = 1;
+            // Check for array access
             if (peekToken(1).type == Token.TokenType.LEFT_BRACKET) {
                 lookahead = 2;
                 while (peekToken(lookahead).type != Token.TokenType.RIGHT_BRACKET && peekToken(lookahead).type != Token.TokenType.TOKEN_EOF) {
@@ -435,16 +458,19 @@ public class Parser {
                 }
             }
 
+
             if (peekToken(lookahead).type == Token.TokenType.ASSIGN) {
                 var expNode = createNode("Exp");
                 expNode.addChild(createNode("Identifier", currentToken()));
-                match(Token.TokenType.IDENTIFIER);
+                matchAndCreate(Token.TokenType.IDENTIFIER);
+                // Handle array access
                 if (currentToken().type == Token.TokenType.LEFT_BRACKET) {
-                    consumeToken();
+                    expNode.addChild(matchAndCreate(Token.TokenType.LEFT_BRACKET));
                     expNode.addChild(parseConst());
-                    match(Token.TokenType.RIGHT_BRACKET);
+                    matchAndCreate(Token.TokenType.RIGHT_BRACKET);
                 }
-                consumeToken();
+
+                expNode.addChild(matchAndCreate(Token.TokenType.ASSIGN));
                 expNode.addChild(parseExp());
                 return expNode;
             }
@@ -459,7 +485,7 @@ public class Parser {
             var orNode = createNode("Logical_Or");
             orNode.addChild(left);
             while (currentToken().type == Token.TokenType.OR) {
-                consumeToken();
+                orNode.addChild(matchAndCreate(Token.TokenType.OR));
                 orNode.addChild(parseLogicalAndExp());
 
                 if (currentToken().type == Token.TokenType.OR) {
@@ -479,7 +505,7 @@ public class Parser {
             var andNode = createNode("Logical_And");
             andNode.addChild(left);
             while (currentToken().type == Token.TokenType.AND) {
-                consumeToken();
+                andNode.addChild(matchAndCreate(Token.TokenType.AND));
                 andNode.addChild(parseEqualityExp());
                 if (currentToken().type == Token.TokenType.AND) {
                     var newAndNode = createNode("Logical_And");
@@ -498,8 +524,7 @@ public class Parser {
             var equalityNode = createNode("Equality");
             equalityNode.addChild(left);
             while (currentToken().type == Token.TokenType.EQUAL || currentToken().type == Token.TokenType.NOT_EQUAL) {
-                Token operator = currentToken();
-                consumeToken();
+                equalityNode.addChild(matchAndCreate(currentToken().type));
                 equalityNode.addChild(parseRelationalExp());
                 if (currentToken().type == Token.TokenType.EQUAL || currentToken().type == Token.TokenType.NOT_EQUAL) {
                     var newEqualityNode = createNode("Equality");
@@ -521,8 +546,8 @@ public class Parser {
             relationalNode.addChild(left);
             while (currentToken().type == Token.TokenType.LESS || currentToken().type == Token.TokenType.GREATER ||
                     currentToken().type == Token.TokenType.LESS_EQUAL || currentToken().type == Token.TokenType.GREATER_EQUAL) {
-                Token operator = currentToken();
-                consumeToken();
+
+                relationalNode.addChild(matchAndCreate(currentToken().type));
                 relationalNode.addChild(parseAdditiveExp());
 
                 if (currentToken().type == Token.TokenType.LESS || currentToken().type == Token.TokenType.GREATER ||
@@ -545,8 +570,7 @@ public class Parser {
             additiveNode.addChild(left);
 
             while (currentToken().type == Token.TokenType.PLUS || currentToken().type == Token.TokenType.MINUS) {
-                Token operator = currentToken();
-                consumeToken();
+                additiveNode.addChild(matchAndCreate(currentToken().type));
                 additiveNode.addChild(parseMultiplicativeExp());
 
                 if (currentToken().type == Token.TokenType.PLUS || currentToken().type == Token.TokenType.MINUS) {
@@ -571,8 +595,7 @@ public class Parser {
 
             while (currentToken().type == Token.TokenType.MULTIPLY || currentToken().type == Token.TokenType.DIVIDE ||
                     currentToken().type == Token.TokenType.MODULO) {
-                Token operator = currentToken();
-                consumeToken();
+                multiplicativeNode.addChild(matchAndCreate(currentToken().type));
                 multiplicativeNode.addChild(parsePowerExp());
 
                 if (currentToken().type == Token.TokenType.MULTIPLY || currentToken().type == Token.TokenType.DIVIDE ||
@@ -594,7 +617,7 @@ public class Parser {
         if (currentToken().type == Token.TokenType.EXPONENT) {
             var powerNode = createNode("Exponent");
             powerNode.addChild(left);
-            consumeToken();
+            powerNode.addChild(matchAndCreate(Token.TokenType.EXPONENT));
             powerNode.addChild(parsePowerExp());
             return powerNode;
         }
@@ -605,11 +628,8 @@ public class Parser {
         if (currentToken().type == Token.TokenType.NOT ||
                 currentToken().type == Token.TokenType.PLUS ||
                 currentToken().type == Token.TokenType.MINUS) {
-
             var unaryNode = createNode("Unary_Exp");
-            unaryNode.addChild(createNode("Unary_Op", currentToken()));
-
-            consumeToken();
+            unaryNode.addChild(matchAndCreate(currentToken().type));
             unaryNode.addChild(parseUnaryExp());
             return unaryNode;
         } else {
@@ -617,37 +637,37 @@ public class Parser {
         }
     }
 
-private ParseTreeNode parseFactor() throws ParserException {
-    var factorNode = createNode("Factor");
+    private ParseTreeNode parseFactor() throws ParserException {
+        var factorNode = createNode("Factor");
 
-    switch (currentToken().type) {
-        case INTEGER_LITERAL, FLOAT_LITERAL, CHARACTER_LITERAL, TRUE_KW, FALSE_KW ->
-                factorNode.addChild(parseConst());
-        case IDENTIFIER -> {
-            factorNode.addChild(createNode("Identifier", currentToken()));
-            match(Token.TokenType.IDENTIFIER);
-            if (currentToken().type == Token.TokenType.LEFT_PARENTHESIS) {
-                consumeToken();
-                if (currentToken().type != Token.TokenType.RIGHT_PARENTHESIS) {
-                    factorNode.addChild(parseArgumentList());
+        switch (currentToken().type) {
+            case INTEGER_LITERAL, FLOAT_LITERAL, CHARACTER_LITERAL, TRUE_KW, FALSE_KW ->
+                    factorNode.addChild(parseConst());
+            case IDENTIFIER -> {
+                factorNode.addChild(createNode("Identifier", currentToken()));
+                matchAndCreate(Token.TokenType.IDENTIFIER);
+                if (currentToken().type == Token.TokenType.LEFT_PARENTHESIS) {
+                    factorNode.addChild(matchAndCreate(Token.TokenType.LEFT_PARENTHESIS));
+                    if (currentToken().type != Token.TokenType.RIGHT_PARENTHESIS) {
+                        factorNode.addChild(parseArgumentList());
+                    }
+                    matchAndCreate(Token.TokenType.RIGHT_PARENTHESIS);
+                } else if (currentToken().type == Token.TokenType.LEFT_BRACKET) {
+                    consumeToken();
+                    factorNode.addChild(parseConst());
+                    matchAndCreate(Token.TokenType.RIGHT_BRACKET);
                 }
-                match(Token.TokenType.RIGHT_PARENTHESIS);
-            } else if (currentToken().type == Token.TokenType.LEFT_BRACKET) {
-                consumeToken();
-                factorNode.addChild(parseConst());
-                match(Token.TokenType.RIGHT_BRACKET);
             }
+            case LEFT_PARENTHESIS -> {
+                consumeToken();
+                var exp = parseExp();
+                factorNode.addChild(exp);
+                matchAndCreate(Token.TokenType.RIGHT_PARENTHESIS);
+            }
+            default -> throw new ParserException("Unexpected token in factor", currentToken().lineNumber, currentToken().columnNumber);
         }
-        case LEFT_PARENTHESIS -> {
-            consumeToken();
-            var exp = parseExp();
-            factorNode.addChild(exp);
-            match(Token.TokenType.RIGHT_PARENTHESIS);
-        }
-        default -> throw new ParserException("Unexpected token in factor", currentToken().lineNumber, currentToken().columnNumber);
+        return factorNode;
     }
-    return factorNode;
-}
 
     private ParseTreeNode parseConst() throws ParserException {
         var constNode = createNode("Const");
@@ -655,22 +675,21 @@ private ParseTreeNode parseFactor() throws ParserException {
         switch (currentToken().type) {
             case INTEGER_LITERAL -> {
                 constNode.addChild(createNode("Int", currentToken()));
-                consumeToken();
+                matchAndCreate(Token.TokenType.INTEGER_LITERAL);
             }
             case FLOAT_LITERAL -> {
                 constNode.addChild(createNode("Float", currentToken()));
-                consumeToken();
+                matchAndCreate(Token.TokenType.FLOAT_LITERAL);
             }
             case CHARACTER_LITERAL -> {
                 constNode.addChild(createNode("Char", currentToken()));
-                consumeToken();
+                matchAndCreate(Token.TokenType.CHARACTER_LITERAL);
             }
             case TRUE_KW, FALSE_KW -> {
                 constNode.addChild(createNode("Bool", currentToken()));
-                consumeToken();
+                matchAndCreate(currentToken().type); // match true or false
             }
             default ->
-                // Error
                     throw new ParserException("Expected constant", currentToken().lineNumber, currentToken().columnNumber);
 
         }
@@ -679,7 +698,7 @@ private ParseTreeNode parseFactor() throws ParserException {
 
     private void reportError(String message, Token.TokenType expected) throws ParserException {
         System.err.println("Error: " + message + ", Expected: " + expected + ", Line: " + currentToken().lineNumber + ", Column: " + currentToken().columnNumber);
-        panicMode = true; // Set panic mode flag
+        panicMode = true;
         throw new ParserException(message, currentToken().lineNumber, currentToken().columnNumber);
     }
 
