@@ -1,0 +1,103 @@
+bool array[5] = {1, 2};
+int array[10];
+
+// Test variables
+int a, b, c;
+int d = 5;
+int c = bar(1000, 2, 3);
+int b = a;
+
+// Function prototypes
+int isValid(bool x, int y, char z);
+int empty();bool array[5] = {1, 2};
+int array[10];
+
+// Test variables
+int a, b, c;
+int d = 5;
+int c = bar(1000, 2, 3);
+int b = a;
+
+// Function prototypes
+int isValid(bool x, int y, char z);
+int empty();
+
+int main() {
+    // LEX
+    identifier_test {
+            woof_woof = "Hello world!";
+        }
+        keyword_test {
+            char;
+            int;
+            float;
+            bool;
+            if;
+            else;
+            for;
+            while;
+            return;
+            printf;
+            scanf;
+            intelligence;
+        }
+
+        reservedword_test {
+            true;
+            false;
+        }
+
+        constants_test {
+            10
+            10.0
+            'a'
+            true
+            12ten 5 rubber 5band
+        }
+
+        noisewords_test {
+            1'000
+            1'000'000
+        }
+
+        comments_test {
+            // this is a comment
+        }
+
+        operators_test {
+            12 + 12;
+            12 - 45;
+            45 * 15;
+            1.00 / 45;
+            1 % 19;
+            18 ^ 20;
+            12 / 19;
+        }
+
+        boolean_test {
+            12 == 14;
+            11 != 19;
+            12 < 9;
+            18 <= 7;
+            6 > 5;
+            4 >= 3;
+            !;
+            &&;
+            ||;
+        }
+
+        delimiters_test {
+            ();
+            {};
+            [];
+        }
+
+        invalid_test {
+            woof_woof = 123;
+        }
+}
+
+
+bool isValid(bool x, int y, char z) {
+    int a, b;
+}
