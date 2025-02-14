@@ -1,0 +1,165 @@
+bool array[5] = {1, 2};
+int array[10];
+
+// Test variables
+int a, b, c;
+int d = 5;
+int c = bar(1000, 2, 3);
+int b = a;
+
+// Function prototypes
+int isValid(bool x, int y, char z);
+int empty();
+
+int main() {
+    // Test input
+    scanf("%d");
+    scanf("dog");
+    scanf("%f", &value);
+    scanf("%f %f", &value1, &value2);
+    scanf(" ");
+
+    // Test output
+    printf("Hello, Universe!");
+    printf(name);
+    printf("Hello, your grade is %d %d", grade);
+    printf("Hello, your grade is %d %d", grade, year);
+
+    // Test if statements
+    if (true) {
+        return 0;
+    }
+
+    if (false) {
+        bool a;
+    } else {
+        bool b;
+    }
+
+    if (false) {
+        return 0;
+    } else if (true) {
+        int a;
+    } else if (1'000){
+        int b;
+    } else {
+        int c;
+    }
+
+    if (false) {
+        if (true) {
+            int test;
+        }
+    } else {
+        bool b;
+    }
+
+
+    // Test for loops
+    for (int i = 0; less_than(i); increment(i)) {
+        int result = 2;
+    }
+
+     for (int i = 1; i; i) {
+        for (int j = 0; j; j) {
+            int testing = 5;
+        }
+    }
+
+    // Test while loops
+    while (false) {
+        return false;
+    }
+
+    while (true) {
+        int a;
+        while (5) {
+            5;
+        }
+        return true;
+    }
+
+    // Test declarations variables and arrays
+    int value;
+    char grade = 'a';
+
+    float a = 1, b = 2, c = 3;
+    bool a, b, c;
+
+    int a = b = c = d = e = 10;
+    int a = b = (c = 2);
+    int zest = b = c = 2, d = 10;
+
+    int arr[1];
+    bool array[5] = {1, 2};
+    int array[2] = {'c', true, 0, 1.0};
+    int arr[3] = {(foo(5)), a[20], multiply(a)};
+
+    // Assignment statements
+    a = 1;
+    a = b = c = d = e = 10;
+    a = b = (c = 2);
+
+    // Test expressions
+
+    // Logical exp
+    1 || 2;
+    1 || 2 || 3;
+    a = 1 || 2 || 3;
+    a = 1 || (2 || 3);
+    a = b = 1 || 2 || 3;
+
+    1 && 2;
+    1 && 2 && 3;
+    a = 1 && 2 && 3;
+    a = 1 && 2 || 3;
+    z = 10 && 20 && 30 || 40;
+    a = 1 && (2 || 3);
+    a = 1 || (2 || 3);
+    a = b = 1 || 2 || 3;
+
+    // Equality exp
+    a == b;
+    a != b;
+    a == b == c;
+    a == b != c;
+
+    // Relational exp
+    1 < 2;
+    a <= 2;
+    a > b;
+    5 >= 7;
+    3 > 4 > 5 > 7 > 7;
+    1 == 5 > 8;
+    1 != 3 <= 4;
+
+    // Additive exp
+    1 + 1;
+    2 - 1;
+    1 + 1 + 1;
+    1 + 1 - 2 > 1 == 3;
+
+    // Multiplicative exp
+    2 * 3;
+    5 % 2;
+    x * y;
+    x / y;
+    x % y * z / a;
+
+    // Power exp
+    1^2^3;
+    1 && 2^3^4^func();
+    a = 1 || 2 && 3 ^ 4;
+    a = 1 ^ 2 || 3 && 4;
+
+    // Unary exp
+    b = -1;
+    c = ----3;
+    b = -3 ^ -5;
+    c = 3 + -5;
+
+}
+
+bool isValid(bool x, int y, char z) {
+    int a, b;
+}
