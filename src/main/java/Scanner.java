@@ -1,58 +1,57 @@
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
+
+class LexerException extends Exception {
+    public LexerException(String message, int lineNumber, int columnNumber) {
+        super(String.format("%s (line: %d, column: %d)", message, lineNumber, columnNumber));
+    }
+}
 
 public class Scanner {
-
-    private BufferedReader reader;
+    private final BufferedReader reader;
     private int lineNumber;
     private int columnNumber;
     private char currentChar;
-    private List<Token> tokens;
+    private final List<Token> tokens = new ArrayList<>();
 
-    public Scanner(String filename) throws FileNotFoundException {
-        this.reader = new BufferedReader(new FileReader(filename));
+    public Scanner(String filename) throws IOException {
+        this.reader = Files.newBufferedReader(Paths.get(filename));
         this.lineNumber = 1;
         this.columnNumber = 0;
-        this.tokens = new ArrayList<>();
-        readNextChar(); // Initialize currentChar
+        readNextChar();
     }
 
-    private void readNextChar() {
-        try {
-            int charCode = reader.read();
-            currentChar = (charCode == -1) ? '\0' : (char) charCode;
+    private void readNextChar() throws IOException {
+        int charCode = reader.read();
+        if (charCode == -1) {
+            currentChar = '\0';
+        } else {
+            currentChar = (char) charCode;
             if (currentChar == '\n') {
                 lineNumber++;
                 columnNumber = 0;
             } else {
                 columnNumber++;
             }
-        } catch (IOException e) {
-            System.err.println("Error reading character: " + e.getMessage());
-            currentChar = '\0';
         }
     }
-    private Optional<Character> peek() {
-        try {
-            reader.mark(1);
-            int nextChar = reader.read();
-            reader.reset();
-            return (nextChar == -1) ? Optional.empty() : Optional.of((char) nextChar);
-        } catch (IOException e) {
-            System.err.println("Error peeking: " + e.getMessage());
-            return Optional.empty();
-        }
+    private char peek() throws IOException{
+        reader.mark(1);
+        int nextChar = reader.read();
+        reader.reset();
+        return (nextChar == -1) ? '\0' : (char) nextChar;
     }
 
-    private void skipWhitespaceAndComments() {
+    private void skipWhitespaceAndComments() throws IOException {
         while (Character.isWhitespace(currentChar) || currentChar == '/') {
             if (currentChar == '/') {
-                if (peek().orElse('\0') == '/') {
+                if (peek() == '/') {
                     skipComment();
                 } else {
-                    return; // It's a divide operator, not a comment
+                    return; // It's a divide operator
                 }
             } else {
                 readNextChar();
@@ -60,55 +59,48 @@ public class Scanner {
         }
     }
 
-    private void skipComment() {
-        // Consume characters until newline or EOF
-        StringBuilder commentLexeme = new StringBuilder();
-        commentLexeme.append("//");
+    private void skipComment() throws IOException {
         while (currentChar != '\n' && currentChar != '\0') {
-            commentLexeme.append(currentChar);
             readNextChar();
         }
-        System.out.println("Next token is: COMMENT"); //keep printing
     }
 
-    public List<Token> scan() {
+    public List<Token> scan() throws LexerException, IOException {
         while (currentChar != '\0') {
             skipWhitespaceAndComments();
             if (currentChar == '\0') {
                 break;
             }
-
             int tokenStartLine = lineNumber;
             int tokenStartColumn = columnNumber;
 
-            createToken().ifPresent(token -> {
-                token.lineNumber = tokenStartLine;
-                token.columnNumber = tokenStartColumn;
-                tokens.add(token);
-            });
+            Token token = createToken();
+            token.lineNumber = tokenStartLine;
+            token.columnNumber = tokenStartColumn;
+            tokens.add(token);
         }
 
         addEOFToken();
         return tokens;
     }
 
-    private Optional<Token> createToken() {
-        if (Character.isDigit(currentChar) || (currentChar == '.' && peek().map(Character::isDigit).orElse(false))) {
-            return Optional.of(scanNumber());
+    private Token createToken() throws LexerException, IOException {
+        if (Character.isDigit(currentChar) || (currentChar == '.' && Character.isDigit(peek()))) {
+            return scanNumber();
         } else if (Character.isLetter(currentChar) || currentChar == '_') {
-            return Optional.of(scanIdentifierOrKeyword());
+            return scanIdentifierOrKeyword();
         } else if (currentChar == '"') {
-            return Optional.of(scanString());
+            return scanString();
         } else if (currentChar == '\'') {
-            return Optional.of(scanCharacterLiteral());
+            return scanCharacterLiteral();
         } else {
             return scanSymbol();
         }
     }
-    private Token scanNumber() {
+
+    private Token scanNumber() throws LexerException, IOException {
         StringBuilder lexeme = new StringBuilder();
         boolean hasDecimal = false;
-        boolean errorOccurred = false;
 
         // Leading decimal (if any)
         if (currentChar == '.') {
@@ -120,14 +112,11 @@ public class Scanner {
         while (Character.isDigit(currentChar) || currentChar == '\'' || currentChar == '`' || currentChar == '.') {
             if (currentChar == '.') {
                 if (hasDecimal) {
-                    break; // Second decimal
+                    break; // Second decimal - invalid
                 }
                 hasDecimal = true;
-                lexeme.append(currentChar);
-                readNextChar();
             } else if (currentChar == '\'' || currentChar == '`') {
-                char separator = currentChar;
-                lexeme.append(separator);
+                // Simplified noise separator handling
                 readNextChar();
                 int digits = 0;
                 while (digits < 3 && Character.isDigit(currentChar)) {
@@ -136,61 +125,28 @@ public class Scanner {
                     digits++;
                 }
                 if (digits != 3) {
-                    errorOccurred = true;
-                    System.err.printf("ERROR: Invalid noise separators at line %d, col %d%n", lineNumber, columnNumber);
-                    break; // Stop processing
+                    throw new LexerException("Invalid noise separators", lineNumber, columnNumber);
                 }
-            } else {
-                lexeme.append(currentChar);
-                readNextChar();
+                continue; // Skip appending the separator itself
             }
+            lexeme.append(currentChar);
+            readNextChar();
+
         }
 
-        if (!errorOccurred) {
-            String temp = "";
-            int digitCount = 0;
-            boolean strictNoiseValid = true;
-            String currentLexeme = lexeme.toString();
+        String cleanedLexeme = lexeme.toString().replaceAll("['`]", "");
 
-            for (int i = currentLexeme.length() - 1; i >= 0; i--) {
-                char c = currentLexeme.charAt(i);
-                if (Character.isDigit(c)) {
-                    temp += c;
-                    digitCount++;
-                } else if (c == '\'' || c == '`') {
-                    if (digitCount != 3) {
-                        strictNoiseValid = false;
-                        break;
-                    }
-                    digitCount = 0;
-                } else if (c == '.') {
-                    temp += c;
-                    digitCount = 0;
-                }
-            }
-
-            if (!strictNoiseValid) {
-                System.err.printf("ERROR: Invalid noise separators at line %d, col %d%n", lineNumber, columnNumber);
-                return createErrorToken("Invalid noise separators"); // Better error handling
-            }
-
-            String cleanedLexeme = new StringBuilder(temp).reverse().toString();
-            if (cleanedLexeme.startsWith(".")) {
-                cleanedLexeme = "0" + cleanedLexeme;
-            }
-            if (cleanedLexeme.endsWith(".")) {
-                cleanedLexeme = cleanedLexeme + "0";
-            }
-            return new Token(hasDecimal ? Token.TokenType.FLOAT_LITERAL : Token.TokenType.INTEGER_LITERAL, cleanedLexeme, 0, 0); // Line/col set later
-        } else {
-            while (Character.isDigit(currentChar) || currentChar == '\'' || currentChar == '`' || currentChar == '.') {
-                readNextChar(); //consume rest of invalid number
-            }
-            return createErrorToken("Invalid Number");
+        if (cleanedLexeme.startsWith(".")) {
+            cleanedLexeme = "0" + cleanedLexeme;
         }
+        if (cleanedLexeme.endsWith(".")) {
+            cleanedLexeme = cleanedLexeme + "0";
+        }
+
+        return new Token(hasDecimal ? Token.TokenType.FLOAT_LITERAL : Token.TokenType.INTEGER_LITERAL, cleanedLexeme, 0, 0);
     }
 
-    private Token scanIdentifierOrKeyword() {
+    private Token scanIdentifierOrKeyword() throws LexerException, IOException {
         StringBuilder lexeme = new StringBuilder();
         while (Character.isLetterOrDigit(currentChar) || currentChar == '_') {
             lexeme.append(currentChar);
@@ -199,39 +155,48 @@ public class Scanner {
 
         String lexemeStr = lexeme.toString();
         if (lexemeStr.length() > 31) {
-            System.err.printf("ERROR - invalid identifier: %s%n", lexemeStr);
-            //Do not add the invalid identifier token, and set lexeme to empty. Continue scanning
-            return createErrorToken("Invalid Identifier");
+            throw new LexerException("Invalid identifier: exceeds maximum length", lineNumber, columnNumber);
         }
 
-
         Token.TokenType type = checkKeyword(lexemeStr);
-        return new Token(type, lexemeStr, 0, 0);  // Line/col set later
+        return new Token(type, lexemeStr, 0, 0);
     }
 
     private Token.TokenType checkKeyword(String lexeme) {
-        try {
-            return Token.TokenType.valueOf(lexeme.toUpperCase() + "_KW"); // Direct enum conversion
-        } catch (IllegalArgumentException e) {
-            return Token.TokenType.IDENTIFIER;
-        }
+        return switch (lexeme.toLowerCase()) {
+            case "char" -> Token.TokenType.CHAR_KW;
+            case "int" -> Token.TokenType.INT_KW;
+            case "float" -> Token.TokenType.FLOAT_KW;
+            case "bool" -> Token.TokenType.BOOL_KW;
+            case "if" -> Token.TokenType.IF_KW;
+            case "else" -> Token.TokenType.ELSE_KW;
+            case "for" -> Token.TokenType.FOR_KW;
+            case "while" -> Token.TokenType.WHILE_KW;
+            case "return" -> Token.TokenType.RETURN_KW;
+            case "printf" -> Token.TokenType.PRINTF_KW;
+            case "scanf" -> Token.TokenType.SCANF_KW;
+            case "true" -> Token.TokenType.TRUE_KW;
+            case "false" -> Token.TokenType.FALSE_KW;
+            case "void" -> Token.TokenType.VOID_KW;
+            default -> Token.TokenType.IDENTIFIER;
+        };
     }
 
-
-    private Token scanString() {
+    private Token scanString() throws LexerException, IOException {
         StringBuilder lexeme = new StringBuilder();
-        lexeme.append(currentChar); // Opening quote
         readNextChar();
 
         while (currentChar != '"' && currentChar != '\0') {
             if (currentChar == '\\') {
-                lexeme.append(currentChar);
                 readNextChar();
-                if (currentChar != '\0' && currentChar != '"') {
-                    lexeme.append(currentChar); // Escaped character
-                } else {
-                    System.err.println("ERROR: unterminated string");
-                    return createErrorToken("Unterminated string"); // Stop if EOF or unterminated
+                switch (currentChar) {
+                    case 'n':  lexeme.append('\n'); break;
+                    case 't':  lexeme.append('\t'); break;
+                    case 'r':  lexeme.append('\r'); break;
+                    case '"':  lexeme.append('"');  break;
+                    case '\\': lexeme.append('\\'); break;
+                    default:
+                        throw new LexerException("Invalid escape sequence", lineNumber, columnNumber);
                 }
             } else {
                 lexeme.append(currentChar);
@@ -240,133 +205,113 @@ public class Scanner {
         }
 
         if (currentChar == '"') {
-            lexeme.append(currentChar);
             readNextChar();
-            return new Token(Token.TokenType.STRING, lexeme.toString(), 0, 0); // Line/col set later
+            return new Token(Token.TokenType.STRING, lexeme.toString(), 0, 0);
         } else {
-            System.err.println("ERROR: unterminated string");
-            return createErrorToken("Unterminated String"); // Consistent error
+            throw new LexerException("Unterminated string", lineNumber, columnNumber);
         }
     }
 
-    private Token scanCharacterLiteral() {
-        StringBuilder lexeme = new StringBuilder();
-        lexeme.append(currentChar); // Opening quote
+    private Token scanCharacterLiteral() throws LexerException, IOException {
         readNextChar();
 
+        char charValue;
         if (currentChar == '\\') {
-            lexeme.append(currentChar);
             readNextChar();
-            if (currentChar != '\'' && currentChar != '\0') {
-                lexeme.append(currentChar);  // Escaped character
-            }
-            else {
-                System.err.println("ERROR: invalid character literal");
-                return createErrorToken("Invalid char literal"); // Stop processing
-            }
+            charValue = switch (currentChar) {
+                case 'n' -> '\n';
+                case 't' -> '\t';
+                case 'r' -> '\r';
+                case '\'' -> '\'';
+                case '\\' -> '\\';
+                default -> throw new LexerException("Invalid escape sequence in character literal", lineNumber, columnNumber);
+            };
         } else if (currentChar == '\'' || currentChar == '\0') {
-            System.err.println("ERROR: invalid character literal");
-            return createErrorToken("Invalid char literal"); // Stop processing
+            throw new LexerException("Invalid character literal", lineNumber, columnNumber);
         } else {
-            lexeme.append(currentChar);
+            charValue = currentChar;
+        }
+        readNextChar();
+
+        if(currentChar != '\'') {
+            throw new LexerException("Unterminated character literal", lineNumber, columnNumber);
         }
 
         readNextChar();
-        if (currentChar == '\'') {
-            lexeme.append(currentChar);
-            readNextChar();
-            return new Token(Token.TokenType.CHARACTER_LITERAL, lexeme.toString(), 0, 0); // Line/col set later
-        } else {
-            System.err.println("ERROR: unterminated character literal");
-            return createErrorToken("Unterminated char"); // Stop processing
-        }
+        return new Token(Token.TokenType.CHARACTER_LITERAL, String.valueOf(charValue), 0, 0); // Store the actual character
     }
 
-
-    private Optional<Token> scanSymbol() {
-        switch (currentChar) {
-            case '(': readNextChar(); return Optional.of(new Token(Token.TokenType.LEFT_PARENTHESIS, "(", 0, 0));
-            case ')': readNextChar(); return Optional.of(new Token(Token.TokenType.RIGHT_PARENTHESIS, ")", 0, 0));
-            case '[': readNextChar(); return Optional.of(new Token(Token.TokenType.LEFT_BRACKET, "[", 0, 0));
-            case ']': readNextChar(); return Optional.of(new Token(Token.TokenType.RIGHT_BRACKET, "]", 0, 0));
-            case '{': readNextChar(); return Optional.of(new Token(Token.TokenType.LEFT_BRACE, "{", 0, 0));
-            case '}': readNextChar(); return Optional.of(new Token(Token.TokenType.RIGHT_BRACE, "}", 0, 0));
-            case ',': readNextChar(); return Optional.of(new Token(Token.TokenType.COMMA, ",", 0, 0));
-            case ';': readNextChar(); return Optional.of(new Token(Token.TokenType.SEMICOLON, ";", 0, 0));
-            case '+': readNextChar(); return Optional.of(new Token(Token.TokenType.PLUS, "+", 0, 0));
-            case '-': readNextChar(); return Optional.of(new Token(Token.TokenType.MINUS, "-", 0, 0));
-            case '*': readNextChar(); return Optional.of(new Token(Token.TokenType.MULTIPLY, "*", 0, 0));
-            case '^': readNextChar(); return Optional.of(new Token(Token.TokenType.EXPONENT, "^", 0, 0));
-            case '%': readNextChar(); return Optional.of(new Token(Token.TokenType.MODULO, "%", 0, 0));
-            case '=':
-                readNextChar();
-                if (currentChar == '=') {
+    private Token scanSymbol() throws LexerException, IOException {
+        Token token = switch (currentChar) {
+            case '(' -> new Token(Token.TokenType.LEFT_PARENTHESIS, "(", 0, 0);
+            case ')' -> new Token(Token.TokenType.RIGHT_PARENTHESIS, ")", 0, 0);
+            case '[' -> new Token(Token.TokenType.LEFT_BRACKET, "[", 0, 0);
+            case ']' -> new Token(Token.TokenType.RIGHT_BRACKET, "]", 0, 0);
+            case '{' -> new Token(Token.TokenType.LEFT_BRACE, "{", 0, 0);
+            case '}' -> new Token(Token.TokenType.RIGHT_BRACE, "}", 0, 0);
+            case ',' -> new Token(Token.TokenType.COMMA, ",", 0, 0);
+            case ';' -> new Token(Token.TokenType.SEMICOLON, ";", 0, 0);
+            case '+' -> new Token(Token.TokenType.PLUS, "+", 0, 0);
+            case '-' -> new Token(Token.TokenType.MINUS, "-", 0, 0);
+            case '*' -> new Token(Token.TokenType.MULTIPLY, "*", 0, 0);
+            case '^' -> new Token(Token.TokenType.EXPONENT, "^", 0, 0);
+            case '%' -> new Token(Token.TokenType.MODULO, "%", 0, 0);
+            case '=' -> {
+                if (peek() == '=') {
                     readNextChar();
-                    return Optional.of(new Token(Token.TokenType.EQUAL, "==", 0, 0));
+                    yield new Token(Token.TokenType.EQUAL, "==", 0, 0); // Use yield in switch expression
                 } else {
-                    return Optional.of(new Token(Token.TokenType.ASSIGN, "=", 0, 0));
+                    yield new Token(Token.TokenType.ASSIGN, "=", 0, 0);
                 }
-            case '>':
-                readNextChar();
-                if (currentChar == '=') {
+            }
+            case '>' -> {
+                if (peek() == '=') {
                     readNextChar();
-                    return Optional.of(new Token(Token.TokenType.GREATER_EQUAL, ">=", 0, 0));
+                    yield new Token(Token.TokenType.GREATER_EQUAL, ">=", 0, 0);
                 } else {
-                    return Optional.of(new Token(Token.TokenType.GREATER, ">", 0, 0));
+                    yield new Token(Token.TokenType.GREATER, ">", 0, 0);
                 }
-            case '<':
-                readNextChar();
-                if (currentChar == '=') {
+            }
+            case '<' -> {
+                if (peek() == '=') {
                     readNextChar();
-                    return Optional.of(new Token(Token.TokenType.LESS_EQUAL, "<=", 0, 0));
+                    yield new Token(Token.TokenType.LESS_EQUAL, "<=", 0, 0);
                 } else {
-                    return Optional.of(new Token(Token.TokenType.LESS, "<", 0, 0));
+                    yield new Token(Token.TokenType.LESS, "<", 0, 0);
                 }
-            case '!':
-                readNextChar();
-                if (currentChar == '=') {
+            }
+            case '!' -> {
+                if (peek() == '=') {
                     readNextChar();
-                    return Optional.of(new Token(Token.TokenType.NOT_EQUAL, "!=", 0, 0));
+                    yield new Token(Token.TokenType.NOT_EQUAL, "!=", 0, 0);
                 } else {
-                    return Optional.of(new Token(Token.TokenType.NOT, "!", 0, 0));
+                    yield new Token(Token.TokenType.NOT, "!", 0, 0);
                 }
-            case '&':
-                readNextChar();
-                if (currentChar == '&') {
+            }
+            case '&' -> {
+                if (peek() == '&') {
                     readNextChar();
-                    return Optional.of(new Token(Token.TokenType.AND, "&&", 0, 0));
+                    yield new Token(Token.TokenType.AND, "&&", 0, 0);
                 } else {
-                    return Optional.of(new Token(Token.TokenType.AMPERSAND, "&", 0, 0));
+                    yield new Token(Token.TokenType.AMPERSAND, "&", 0, 0);
                 }
-            case '|':
-                readNextChar();
-                if (currentChar == '|') {
+            }
+            case '|' -> {
+                if (peek() == '|') {
                     readNextChar();
-                    return Optional.of(new Token(Token.TokenType.OR, "||", 0, 0));
+                    yield new Token(Token.TokenType.OR, "||", 0, 0);
                 } else {
-                    System.err.println("ERROR - invalid char |");
-                    return Optional.of(createErrorToken("|"));
+                    throw new LexerException("Invalid character '|'", lineNumber, columnNumber);
                 }
-            case '/':
-                readNextChar();
-                return Optional.of(new Token(Token.TokenType.DIVIDE, "/", 0, 0));
-            default:
-                System.err.println("ERROR - invalid char " + currentChar);
-                readNextChar(); // Consume the invalid character
-                return Optional.of(createErrorToken(String.valueOf(currentChar)));
-
-        }
-    }
-
-    private Token createErrorToken(String lexeme) {
-        return new Token(Token.TokenType.ERROR_INVALID_CHARACTER, lexeme, lineNumber, columnNumber);
+            }
+            case '/' -> new Token(Token.TokenType.DIVIDE, "/", 0, 0);
+            default -> throw new LexerException("Invalid character: " + currentChar, lineNumber, columnNumber);
+        };
+        readNextChar();
+        return token;
     }
 
     private void addEOFToken() {
-        tokens.add(new Token(Token.TokenType.TOKEN_EOF, "EOF", lineNumber, -1)); // Keep consistent with C output
-    }
-
-    public void close() throws IOException {
-        reader.close();
+        tokens.add(new Token(Token.TokenType.TOKEN_EOF, "EOF", lineNumber, 0));
     }
 }
