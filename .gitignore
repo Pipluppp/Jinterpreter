@@ -39,3 +39,4 @@ build/
 /.idea/
 
 symbol_table.txt
+parse_tree_output.ebnf
